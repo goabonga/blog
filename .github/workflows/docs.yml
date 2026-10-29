@@ -1,0 +1,121 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: docs
+
+# Build the Zensical site and deploy it to GitHub Pages.
+#
+# There is no push trigger. The deploy is driven by the `docs` job of the
+# ci workflow, which calls this workflow once multicz has bumped and
+# tagged whatever moved on `main`. The `blog` component (paths `docs/**` +
+# `zensical.toml`) turns "did the docs change?" into a tag-aware question
+# answered by the planner that decides the release, instead
+# of a paths filter that would fire once before the release commit exists
+# and again after it rewrites zensical.toml.
+#
+# Building from the ref the caller passes - `main` after the release
+# push - is what makes the published site the released tree rather than
+# the tree that triggered CI.
+#
+# `workflow_dispatch` stays as the manual escape hatch: redeploy the
+# current site without cutting a release.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Ref to build the site from.
+        type: string
+        default: main
+      bumped:
+        description: Space-separated components the calling release bumped.
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Ref to build the site from.
+        type: string
+        default: main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  # Needed by the "purge stale artifact" step to DELETE prior-attempt
+  # ``github-pages`` artifacts via the GitHub API.
+  actions: write
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # The release commit and tags multicz just pushed, so the site
+          # is built from the tree that was actually released.
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Build site
+        # `--only-group docs` installs the locked Zensical without the
+        # dev group or the project itself - Zensical imports no project
+        # code. Locked rather than `pip install zensical` so a Zensical
+        # release cannot break Pages between two unrelated pushes. It
+        # has to be one `uv run`: a separate `uv sync --only-group docs`
+        # is undone by the next `uv run`, which re-adds the project.
+        run: uv run --frozen --only-group docs zensical build --clean
+
+      # On a retried run, the previous attempt's ``github-pages`` artifact
+      # still exists - ``upload-pages-artifact`` cannot overwrite it, so
+      # ``deploy-pages`` sees two artifacts of the same name and aborts with
+      # ``Multiple artifacts named "github-pages" were unexpectedly found for
+      # this workflow run``. Delete stale artifacts of this run before
+      # uploading so retries recover automatically.
+      - name: Purge stale github-pages artifact from previous attempt
+        if: github.run_attempt != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          ids=$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
+                  --jq '.artifacts[] | select(.name=="github-pages") | .id')
+          for id in $ids; do
+            echo "Deleting stale artifact $id"
+            gh api -X DELETE "repos/$REPO/actions/artifacts/$id"
+          done
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+        id: deployment
+
+      - name: Write step summary
+        if: always()
+        env:
+          REF: ${{ inputs.ref }}
+          BUMPED: ${{ inputs.bumped }}
+          JOB_STATUS: ${{ job.status }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          {
+            echo "## Docs deploy"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Ref | \`$REF\` |"
+            echo "| Bumped by the caller | \`$BUMPED\` |"
+            echo "| Status | \`$JOB_STATUS\` |"
+            echo "| URL | $PAGE_URL |"
+          } >> "$GITHUB_STEP_SUMMARY"
