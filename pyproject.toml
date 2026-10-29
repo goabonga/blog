@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+[project]
+name = "blog"
+version = "0.0.0"
+description = "Personal blog of goabonga, built with Zensical."
+readme = "README.md"
+authors = [
+    { name = "Chris", email = "goabonga@pm.me" },
+]
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+
+[project.urls]
+Homepage = "https://github.com/goabonga/blog"
+Repository = "https://github.com/goabonga/blog"
+Issues = "https://github.com/goabonga/blog/issues"
+
+# The repository is a site, not a package: nothing is built or installed.
+[tool.uv]
+package = false
+
+[dependency-groups]
+docs = [
+    "zensical>=0.0.73",
+]

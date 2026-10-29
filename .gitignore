@@ -2,3 +2,10 @@
 .idea/
 .vscode/
 .DS_Store
+
+# uv virtual environment
+.venv/
+
+# Zensical build output
+site/
+.zensical/
