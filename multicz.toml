@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# multicz.toml - versioning, changelog and tagging for the blog, driven by
+# Conventional Commits.
+# Docs: https://goabonga.github.io/multicz/
+
+[project]
+commit_convention = "conventional"
+tag_format = "v{version}"
+initial_version = "0.0.0"
+
+# The release commit does not start the ci workflow again: the run that
+# cut the release already validated and deployed what it carries. The
+# default pattern still matches it, so the planner filters it out.
+release_commit_message = "chore(release): bump {summary} [skip ci]\n\n{body}"
+
+# A `docs:` commit (a post, a page) is the usual change of this repository,
+# so it releases a patch. Only the paths of the component below count: a
+# commit touching nothing else, scripts or tooling for instance, never
+# releases, whatever its type.
+[project.bump_rules]
+feat = "minor"
+fix = "patch"
+perf = "patch"
+revert = "patch"
+docs = "patch"
+
+# CHANGELOG layout aligned on Keep-a-Changelog. Sections render in
+# declaration order.
+[[project.changelog_sections]]
+title = "Added"
+types = ["feat"]
+
+[[project.changelog_sections]]
+title = "Content"
+types = ["docs"]
+
+[[project.changelog_sections]]
+title = "Fixed"
+types = ["fix"]
+
+[[project.changelog_sections]]
+title = "Performance"
+types = ["perf"]
+
+# The "release" of the site is its GitHub Pages deploy, so the component
+# ships no artifact. Its version lives in zensical.toml, which is also one
+# of its paths.
+[components.blog]
+paths = ["docs/**", "zensical.toml"]
+bump_files = [
+    { file = "zensical.toml", key = "project.extra.versions.blog" },
+]
+changelog = "CHANGELOG.md"
+
+# The release of the site is its GitHub Release, created by the `github-release`
+# job of the ci workflow, next to the GitHub Pages deploy.
+[[components.blog.artifacts]]
+type = "github-release"
+ref = "v{version}"

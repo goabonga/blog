@@ -63,6 +63,10 @@ blog_dir = "."
 [project.extra]
 generator = false
 
+# Version of the site, written by multicz at each release.
+[project.extra.versions]
+blog = "0.0.0"
+
 [project.markdown_extensions.abbr]
 [project.markdown_extensions.admonition]
 [project.markdown_extensions.attr_list]

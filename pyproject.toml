@@ -23,6 +23,9 @@ Issues = "https://github.com/goabonga/blog/issues"
 package = false
 
 [dependency-groups]
+dev = [
+    "multicz>=1.9",
+]
 docs = [
     "zensical>=0.0.73",
 ]
