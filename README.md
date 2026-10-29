@@ -1,10 +1,17 @@
-# blog
+<h1 align="center">
+  <img src="https://github.com/goabonga/blog/raw/main/docs/blog.svg" alt="blog" width="120" /><br/>
+  blog
+</h1>
 
-[![CI](https://github.com/goabonga/blog/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/goabonga/blog/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/goabonga/blog/blob/main/LICENSE)
-[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+<p align="center">
+  <em>Personal blog of goabonga, built with <a href="https://zensical.org">Zensical</a>.</em>
+</p>
 
-Personal blog of goabonga, built with [Zensical](https://zensical.org).
+<p align="center">
+  <a href="https://github.com/goabonga/blog/actions/workflows/ci.yml"><img src="https://github.com/goabonga/blog/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
+  <a href="https://github.com/goabonga/blog/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
+  <a href="https://github.com/astral-sh/uv"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json" alt="uv"/></a>
+</p>
 
 ## Documentation
 
