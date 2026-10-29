@@ -1,0 +1,16 @@
+/*
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Chris <goabonga@pm.me>
+ *
+ * Pure black dark scheme: the slate palette leaves a faint tint on the
+ * background, this brings it down to black.
+ */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #000;
+  --md-default-bg-color--light: #000000b0;
+  --md-default-bg-color--lighter: #00000042;
+  --md-default-bg-color--lightest: #00000012;
+  --md-code-bg-color: #0d0d0d;
+  --md-code-bg-color--light: #0d0d0de6;
+  --md-code-bg-color--lighter: #0d0d0d8a;
+}

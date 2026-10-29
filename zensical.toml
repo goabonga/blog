@@ -15,6 +15,7 @@ copyright = """
 Made with <span style="color: #e25555;">&#10084;</span> by
 <a href="https://github.com/goabonga" target="_blank" rel="noopener">goabonga</a>
 """
+extra_css = ["stylesheets/extra.css"]
 nav = [
   { "Blog" = "index.md" },
 ]
@@ -44,14 +45,14 @@ features = [
 
 [[project.theme.palette]]
 scheme = "slate"
-primary = "deep-purple"
+primary = "black"
 accent = "deep-purple"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to light mode"
 
 [[project.theme.palette]]
 scheme = "default"
-primary = "deep-purple"
+primary = "black"
 accent = "deep-purple"
 toggle.icon = "lucide/sun"
 toggle.name = "Switch to dark mode"
