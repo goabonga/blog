@@ -16,7 +16,7 @@ Made with <span style="color: #e25555;">&#10084;</span> by
 <a href="https://github.com/goabonga" target="_blank" rel="noopener">goabonga</a>
 """
 nav = [
-  { "Home" = "index.md" },
+  { "Blog" = "index.md" },
 ]
 
 [project.theme]
@@ -53,6 +53,11 @@ primary = "deep-purple"
 accent = "deep-purple"
 toggle.icon = "lucide/sun"
 toggle.name = "Switch to dark mode"
+
+# The blog is the site: `docs/index.md` is the blog index and the posts live
+# in `docs/posts/`.
+[project.plugins.blog]
+blog_dir = "."
 
 # Drop the "Made with Zensical" line: `copyright` above is the only footer text.
 [project.extra]
