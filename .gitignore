@@ -9,3 +9,8 @@
 # Zensical build output
 site/
 .zensical/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/

@@ -25,7 +25,12 @@ package = false
 [dependency-groups]
 dev = [
     "multicz>=1.9",
+    "pytest>=8.0",
 ]
 docs = [
     "zensical>=0.0.73",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
