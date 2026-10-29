@@ -1,0 +1,435 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: ci
+
+on:
+  pull_request:
+    # An issue branch collects the pull requests of its sub-issues before it
+    # reaches main, so they are checked like the ones into main.
+    branches: [main, "issue-*"]
+  push:
+    branches: [main]
+
+# The quality jobs skip the `chore(release)` commit multicz pushes to main:
+# the run that cut the release already validated the code it carries.
+# `concurrency` cancels superseded PR runs but never main-branch releases.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # An explicit shell enables pipefail, so `| tee` keeps the tool's status.
+    shell: bash
+
+# Every setup-uv step has a `cache-suffix` of its own: two jobs saving the same
+# cache key make the second one fail to reserve it.
+jobs:
+  # The signed merge replays the commits through sign_commit.py, which
+  # refuses an invalid subject; fail here, before the label is added.
+  commit-subjects:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the commit subjects
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/check_commit_subject.py --range "$BASE_SHA..$HEAD_SHA"
+
+  # Verify the two-line SPDX header on the Python scripts, their tests and
+  # the workflows. The script needs no dependency, so nothing is synced.
+  license-headers:
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release)')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Check SPDX license headers
+        run: |
+          {
+            python3 scripts/add_license_header.py --path tests --types py --check
+            python3 scripts/add_license_header.py --path scripts --types py --check
+            python3 scripts/add_license_header.py --path .github --types yml --check
+          } 2>&1 | tee headers.txt
+
+      - name: Summarize license headers
+        if: ${{ !cancelled() }}
+        run: python3 scripts/format_summary.py headers headers.txt
+
+  # `ruff check` plus a separate `ruff format --check`, so formatting
+  # drift is caught for contributors who skipped the pre-commit hooks.
+  lint:
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release)')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          cache-suffix: ${{ github.job }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check --output-format=json --output-file=ruff.json tests scripts
+
+      - name: Summarize ruff check
+        if: ${{ !cancelled() }}
+        run: python3 scripts/format_summary.py ruff-check ruff.json
+
+      - name: Format check
+        if: ${{ !cancelled() }}
+        run: uv run ruff format --check tests scripts 2>&1 | tee ruff-format.txt
+
+      - name: Summarize ruff format
+        if: ${{ !cancelled() }}
+        run: python3 scripts/format_summary.py ruff-format ruff-format.txt
+
+  validate:
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release)')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # multicz validate needs the full history for tag detection
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          cache-suffix: ${{ github.job }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Validate multicz.toml
+        run: uv run multicz validate --strict
+
+  # Build the site in strict mode, so a broken link or an invalid post fails
+  # the pull request instead of the deploy that follows the release.
+  docs-build:
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release)')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          cache-suffix: ${{ github.job }}
+
+      - name: Build the site
+        run: uv run --frozen --only-group docs zensical build --clean --strict
+
+  # Static security analysis of the scripts (Bandit); the skipped tests
+  # are explained in `[tool.bandit]` of pyproject.toml.
+  bandit:
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release)')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          cache-suffix: ${{ github.job }}
+
+      - name: Run Bandit
+        run: uvx "bandit[toml]" -c pyproject.toml --recursive scripts --format json --output bandit.json
+
+      - name: Summarize bandit
+        if: ${{ !cancelled() }}
+        run: python3 scripts/format_summary.py bandit bandit.json
+
+  # Audit the locked dependency graph against the PyPI advisory database.
+  pip-audit:
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release)')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          cache-suffix: ${{ github.job }}
+
+      - name: Export locked requirements
+        # `pip-audit --path .venv` finds no package in a uv venv and
+        # audits nothing, so audit the pinned lock export instead.
+        run: uv export --frozen --all-groups --no-emit-project --no-hashes --output-file requirements.txt
+
+      - name: Run pip-audit
+        run: uvx pip-audit -r requirements.txt --no-deps --disable-pip --format json --output audit.json
+
+      - name: Summarize pip-audit
+        if: ${{ !cancelled() }}
+        run: python3 scripts/format_summary.py pip-audit audit.json
+
+  # Multi-source vulnerability scan with OSV-Scanner, which reads uv.lock.
+  # The binary is pinned to a release and verified against its published
+  # checksum instead of downloading whatever `latest` points to.
+  osv-scanner:
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release)')
+    runs-on: ubuntu-24.04
+    env:
+      OSV_SCANNER_VERSION: v2.7.0
+      OSV_SCANNER_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install OSV-Scanner
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64" \
+            -o "$HOME/.local/bin/osv-scanner"
+          echo "${OSV_SCANNER_SHA256}  $HOME/.local/bin/osv-scanner" | sha256sum --check
+          chmod +x "$HOME/.local/bin/osv-scanner"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run OSV-Scanner
+        run: osv-scanner scan source --lockfile=uv.lock 2>&1 | tee osv-scanner.txt
+
+      - name: Summarize osv-scanner
+        if: ${{ !cancelled() }}
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: python3 scripts/format_summary.py text osv-scanner osv-scanner.txt
+
+  test:
+    needs: [license-headers, lint, validate]
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release)')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          cache-suffix: ${{ github.job }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run pytest
+        run: |
+          uv run pytest -q \
+            --cov=scripts \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --junitxml=junit.xml \
+            -o junit_family=legacy
+
+      - name: Summarize tests and coverage
+        if: ${{ !cancelled() }}
+        run: python3 scripts/format_summary.py pytest --junit junit.xml --coverage coverage.xml
+
+  # Release on main only: bump the version, write the changelog, create
+  # the release commit + tag and push them back. Gated on every quality
+  # job; `needs` blocks on any upstream failure and skips the release
+  # with the quality jobs on a `chore(release)` commit.
+  release:
+    needs:
+      - lint
+      - license-headers
+      - validate
+      - test
+      - docs-build
+      - bandit
+      - pip-audit
+      - osv-scanner
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      # The `blog` component is the only one, so a non-empty plan means the
+      # site moved. Gates the site deploy.
+      bumped: ${{ steps.plan.outputs.bumped }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          # The main-protection ruleset only lets the maintainer push the
+          # release commit and its tag; the workflow token cannot bypass it.
+          token: ${{ secrets.AUTO_MERGE_PAT || github.token }}
+          persist-credentials: true
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          cache-suffix: ${{ github.job }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Configure git author
+        # Attribute the release commit to whoever pushed the head commit
+        # that triggered CI, falling back to the github-actions[bot]
+        # noreply identity when the payload carries no author. The values
+        # are commit-author controlled, so they reach the shell through
+        # env, never through interpolation into the script.
+        env:
+          NAME: ${{ github.event.head_commit.author.name }}
+          EMAIL: ${{ github.event.head_commit.author.email }}
+        run: |
+          git config user.name  "${NAME:-github-actions[bot]}"
+          git config user.email "${EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+
+      - name: Detect GPG availability
+        # Secrets can't be referenced from `if:` directly, so promote
+        # their presence to a step output.
+        id: gpg
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -n "$GPG_PRIVATE_KEY" ] && [ -n "$GPG_PASSPHRASE" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import and unlock GPG key
+        if: steps.gpg.outputs.available == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          # Pre-cache the passphrase in gpg-agent via a dummy sign so
+          # subsequent `git commit -S` / `git tag -s` don't prompt.
+          echo test | gpg --batch --yes --passphrase "$GPG_PASSPHRASE" \
+            --pinentry-mode loopback --sign > /dev/null
+          # Derive the signing key id from the imported key; no extra
+          # secret needed.
+          KEY_ID=$(gpg --list-secret-keys --with-colons \
+            | awk -F: '/^sec/{print $5; exit}')
+          git config user.signingkey "$KEY_ID"
+
+      - name: Plan
+        id: plan
+        run: |
+          uv run multicz plan --summary "$GITHUB_STEP_SUMMARY" \
+            --output json | tee /tmp/plan.json
+          BUMPED=$(jq -r '.bumps | keys | join(" ")' /tmp/plan.json)
+          echo "bumped=$BUMPED" >> "$GITHUB_OUTPUT"
+
+      - name: Bump, commit, tag, push (signed)
+        if: steps.plan.outputs.bumped != '' && steps.gpg.outputs.available == 'true'
+        run: |
+          uv run multicz bump --commit --tag --push --sign \
+            --summary "$GITHUB_STEP_SUMMARY" --output json \
+            | tee /tmp/release.json
+
+      - name: Bump, commit, tag, push
+        if: steps.plan.outputs.bumped != '' && steps.gpg.outputs.available != 'true'
+        run: |
+          uv run multicz bump --commit --tag --push \
+            --summary "$GITHUB_STEP_SUMMARY" --output json \
+            | tee /tmp/release.json
+
+  # Create the GitHub Release for the tag multicz just pushed, with the
+  # release notes it renders from the Conventional Commits and an archive of
+  # the built site. Only when the `blog` component moved; a re-run skips a tag
+  # that already has its release.
+  github-release:
+    needs: [release]
+    if: >-
+      github.event_name == 'push'
+      && github.ref == 'refs/heads/main'
+      && needs.release.result == 'success'
+      && needs.release.outputs.bumped != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # The release commit and tags multicz just pushed.
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          cache-suffix: ${{ github.job }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --group docs
+
+      - name: Build the site
+        # The tree of the release commit, so the archive is what the Pages
+        # deploy publishes for this tag.
+        run: uv run --frozen --group docs zensical build --clean --strict
+
+      - name: Create GitHub Release
+        # The maintainer token, like the release job: the release is
+        # published under the maintainer account, not the bot.
+        env:
+          GH_TOKEN: ${{ secrets.AUTO_MERGE_PAT || github.token }}
+        run: |
+          for tag in $(git tag --points-at HEAD --list 'v*'); do
+            if gh release view "$tag" > /dev/null 2>&1; then
+              echo "Release $tag already exists"
+              continue
+            fi
+            tar -czf "blog-$tag.tar.gz" -C site .
+            uv run --frozen --group docs multicz release-notes --tag "$tag" \
+              | gh release create "$tag" --title "$tag" --notes-file - \
+                  "blog-$tag.tar.gz"
+          done
+
+  # Deploy the documentation site, only when the `blog` component moved: a
+  # post, a page or a change of the site configuration. Any other push to
+  # main leaves the site as it is. Gated on `bumped`, set from the bump
+  # plan, and not on a job result alone, which redeployed the unchanged
+  # site on every push.
+  docs:
+    needs: [release]
+    if: >-
+      !cancelled()
+      && github.event_name == 'push'
+      && github.ref == 'refs/heads/main'
+      && needs.release.result == 'success'
+      && needs.release.outputs.bumped != ''
+    uses: ./.github/workflows/docs.yml
+    with:
+      # `main`, not the triggering SHA: multicz has just pushed the
+      # release commit and tags on top of it, and the published site
+      # should be the released tree.
+      ref: main
+      bumped: ${{ needs.release.outputs.bumped }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      actions: write
